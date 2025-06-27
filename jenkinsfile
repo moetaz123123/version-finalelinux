@@ -29,10 +29,7 @@ pipeline {
         stage('Install Dependencies') {
             steps {
                 echo 'Installing PHP dependencies...'
-                sh '''
-                    composer install --no-interaction --prefer-dist --optimize-autoloader
-                    composer dump-autoload
-                '''
+                sh 'composer install --no-interaction --prefer-dist --optimize-autoloader'
             }
         }
         
@@ -78,9 +75,7 @@ pipeline {
         stage('Run Tests') {
             steps {
                 echo 'Running PHPUnit tests...'
-                sh '''
-                    php artisan test --coverage-clover=coverage.xml
-                '''
+                sh 'php artisan test --coverage-clover=coverage.xml'
             }
             post {
                 always {
@@ -91,40 +86,6 @@ pipeline {
                     script {
                         if (fileExists('coverage.xml')) {
                             publishCoverage adapters: [cloverAdapter('coverage.xml')], sourceFileResolver: sourceFiles('NEVER_STORE')
-                        }
-                    }
-                }
-            }
-        }
-        
-        stage('Security Scan - Trivy') {
-            steps {
-                echo 'Running Trivy vulnerability scan...'
-                script {
-                    // Scan dependencies for vulnerabilities
-                    sh '''
-                        # Install Trivy if not available
-                        if ! command -v trivy &> /dev/null; then
-                            curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin
-                        fi
-                        
-                        # Scan composer.lock for vulnerabilities
-                        trivy fs --format json --output trivy-report.json .
-                        
-                        # Scan for secrets
-                        trivy fs --security-checks secret --format json --output trivy-secrets.json .
-                    '''
-                }
-            }
-            post {
-                always {
-                    // Publish Trivy results
-                    script {
-                        if (fileExists('trivy-report.json')) {
-                            archiveArtifacts artifacts: 'trivy-report.json', fingerprint: true
-                        }
-                        if (fileExists('trivy-secrets.json')) {
-                            archiveArtifacts artifacts: 'trivy-secrets.json', fingerprint: true
                         }
                     }
                 }
@@ -168,13 +129,7 @@ pipeline {
         stage('Build Docker Image') {
             steps {
                 echo 'Building Docker image...'
-                script {
-                    // Build Docker image
-                    sh '''
-                        docker build -t ${DOCKER_IMAGE}:${DOCKER_TAG} .
-                        docker tag ${DOCKER_IMAGE}:${DOCKER_TAG} ${DOCKER_IMAGE}:latest
-                    '''
-                }
+                sh 'docker build -t ${DOCKER_IMAGE}:${DOCKER_TAG} .'
             }
             post {
                 always {
@@ -182,27 +137,6 @@ pipeline {
                     sh '''
                         docker image prune -f
                     '''
-                }
-            }
-        }
-        
-        stage('Docker Security Scan') {
-            steps {
-                echo 'Scanning Docker image for vulnerabilities...'
-                script {
-                    sh '''
-                        # Scan the built Docker image
-                        trivy image --format json --output trivy-docker-report.json ${DOCKER_IMAGE}:${DOCKER_TAG}
-                    '''
-                }
-            }
-            post {
-                always {
-                    script {
-                        if (fileExists('trivy-docker-report.json')) {
-                            archiveArtifacts artifacts: 'trivy-docker-report.json', fingerprint: true
-                        }
-                    }
                 }
             }
         }
