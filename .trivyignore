@@ -1,0 +1,45 @@
+# Trivy ignore file for Laravel Multi-tenant Application
+
+# Vendor dependencies (will be scanned separately)
+vendor/
+
+# Node modules (if any)
+node_modules/
+
+# Storage and cache files
+storage/
+bootstrap/cache/
+
+# Log files
+*.log
+
+# Environment files
+.env
+.env.example
+
+# IDE files
+.vscode/
+.idea/
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Git files
+.git/
+.gitignore
+
+# Docker files (will be scanned separately)
+Dockerfile
+docker-compose.yml
+
+# Documentation
+README.md
+*.md
+
+# Test files
+tests/
+phpunit.xml
+
+# Build artifacts
+public/build/ 
