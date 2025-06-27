@@ -3,7 +3,7 @@ pipeline {
     
     environment {
         // Configuration SonarQube
-        SONAR_TOKEN = credentials('squ_ac1e73fbe2bc8a48740e7cf08b6b25a579b6578d')
+        SONAR_TOKEN = credentials('squ_957be0ba0db6a033a5a71511f65495804aca0645')
         SONAR_HOST_URL = 'http://localhost:9000'
         
         // Configuration Docker
@@ -66,9 +66,7 @@ pipeline {
         stage('Code Quality - Laravel Pint') {
             steps {
                 echo 'Running Laravel Pint code style check...'
-                sh '''
-                    ./vendor/bin/pint --test
-                '''
+                sh './vendor/bin/pint --test'
             }
         }
         
@@ -134,9 +132,7 @@ pipeline {
             post {
                 always {
                     // Clean up Docker images to save space
-                    sh '''
-                        docker image prune -f
-                    '''
+                    sh 'docker image prune -f'
                 }
             }
         }
@@ -153,35 +149,6 @@ pipeline {
                     }
                 }
             }
-        }
-    }
-    
-    post {
-        always {
-            echo 'Pipeline completed. Cleaning up...'
-            // Clean up workspace
-            cleanWs()
-        }
-        success {
-            echo 'Pipeline succeeded!'
-            // Send notification on success
-            emailext (
-                subject: "Pipeline SUCCESS: ${env.JOB_NAME} [${env.BUILD_NUMBER}]",
-                body: "Pipeline succeeded for ${env.JOB_NAME} build ${env.BUILD_NUMBER}. View details at: ${env.BUILD_URL}",
-                recipientProviders: [[$class: 'DevelopersRecipientProvider']]
-            )
-        }
-        failure {
-            echo 'Pipeline failed!'
-            // Send notification on failure
-            emailext (
-                subject: "Pipeline FAILED: ${env.JOB_NAME} [${env.BUILD_NUMBER}]",
-                body: "Pipeline failed for ${env.JOB_NAME} build ${env.BUILD_NUMBER}. View details at: ${env.BUILD_URL}",
-                recipientProviders: [[$class: 'DevelopersRecipientProvider']]
-            )
-        }
-        unstable {
-            echo 'Pipeline unstable!'
         }
     }
 }
