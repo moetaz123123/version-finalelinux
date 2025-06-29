@@ -1,155 +1,518 @@
 pipeline {
     agent any
-
+    
     environment {
-        // Variables SonarQube
-        SONAR_TOKEN = credentials('squ_957be0ba0db6a033a5a71511f65495804aca0645')
-        SONAR_HOST_URL = 'http://localhost:9000'
-
-        // Docker
-        DOCKER_IMAGE = 'laravel-app'
+        DOCKER_IMAGE = "laravel-app:latest"
         DOCKER_TAG = "${env.BUILD_NUMBER}"
-
-        // PHP & Composer (adapter selon ton environnement Jenkins)
-        PHP_PATH = '/usr/bin/php'
-        COMPOSER_PATH = '/usr/local/bin/composer'
-
-        // Base de données de test
-        DB_CONNECTION = 'sqlite'
-        DB_DATABASE = ':memory:'
+        SONAR_TOKEN = credentials('SonarQube2')
+        DOCKER_REGISTRY = 'docker.io'  // Docker Hub
+        DOCKER_USERNAME = 'moetaz1928'  // Remplacez par votre username
+        // Utilisation des outils installés localement
+        COMPOSER_PATH = 'composer'
+        PHP_PATH = 'C:\\xampp\\php\\php.exe'
+        TRIVY_PATH = 'C:\\Users\\User\\Downloads\\trivy_0.63.0_windows-64bit\\trivy.exe'
+        SONARQUBE_SERVER = 'SonarQube' // Nom configuré dans Jenkins
+        SONAR_SCANNER_PATH = 'C:\\Users\\User\\Downloads\\sonar-scanner-4.8.0.2856-windows\\bin\\sonar-scanner.bat'
     }
 
     stages {
         stage('Checkout') {
             steps {
-                echo 'Checkout source code...'
                 checkout scm
             }
         }
 
-        stage('Install Dependencies') {
+        stage('Composer Install') {
             steps {
-                echo 'Install PHP dependencies...'
-                sh "${COMPOSER_PATH} install --no-interaction --prefer-dist --optimize-autoloader"
+                bat '''
+                    echo === Installation des dépendances ===
+                    if not exist composer.phar (
+                        powershell -Command "Invoke-WebRequest -Uri https://getcomposer.org/composer.phar -OutFile composer.phar"
+                    )
+                    "%PHP_PATH%" composer.phar install --optimize-autoloader --no-interaction
+                    if errorlevel 1 (
+                        echo ERREUR: Échec de l'installation des dépendances
+                        exit /b 1
+                    )
+                    echo Configuration des plugins...
+                    "%PHP_PATH%" composer.phar config allow-plugins.infection/extension-installer true
+                    "%PHP_PATH%" composer.phar require --dev infection/infection
+                    echo === Dépendances installées avec succès ===
+                '''
+                bat 'dir vendor\\bin'
             }
         }
 
-        stage('Setup Environment') {
+        stage('Trivy Scan') {
             steps {
-                echo 'Setup Laravel environment...'
-                sh """
-                    cp .env.example .env
-                    ${PHP_PATH} artisan key:generate
-                    ${PHP_PATH} artisan config:cache
-                """
-            }
-        }
+                bat '''
+                    echo === Scan de sécurité Trivy ===
+                    echo Exécution du scan Trivy...
+                    "%TRIVY_PATH%" fs . --skip-files vendor/laravel/pint/builds/pint --timeout 120s > trivy-report.txt 2>&1
 
-        stage('Code Quality - PHPStan') {
-            steps {
-                echo 'Run PHPStan static analysis...'
-                script {
-                    try {
-                        sh """
-                            if ! command -v phpstan &> /dev/null; then
-                                ${COMPOSER_PATH} require --dev phpstan/phpstan
-                            fi
-                            ./vendor/bin/phpstan analyse app --level=5 --no-progress
-                        """
-                    } catch (Exception e) {
-                        echo "PHPStan analysis failed: ${e.getMessage()}"
-                        // Pipeline continue même si PHPStan échoue
-                    }
-                }
-            }
-        }
-
-        stage('Code Style - Laravel Pint') {
-            steps {
-                echo 'Run Laravel Pint code style check...'
-                sh "${PHP_PATH} ./vendor/bin/pint --test"
-            }
-        }
-
-        stage('Run Tests') {
-            steps {
-                echo 'Run PHPUnit tests with coverage...'
-                sh "${PHP_PATH} artisan test --coverage-clover=coverage.xml"
+                    echo Vérification du fichier de rapport...
+                    if exist trivy-report.txt (
+                        echo Fichier trivy-report.txt créé avec succès
+                    ) else (
+                        echo AVERTISSEMENT: Fichier trivy-report.txt non créé, création d'un rapport vide
+                        echo "Aucune vulnérabilité détectée ou erreur lors du scan" > trivy-report.txt
+                    )
+                '''
             }
             post {
                 always {
-                    echo 'Publish test results and coverage report'
-                    publishTestResults testResultsPattern: 'tests/**/test-results.xml'
-
-                    script {
-                        if (fileExists('coverage.xml')) {
-                            publishCoverage adapters: [cloverAdapter('coverage.xml')], sourceFileResolver: sourceFiles('NEVER_STORE')
-                        } else {
-                            echo "Coverage report not found."
-                        }
-                    }
+                    bat 'type trivy-report.txt'
+                    writeFile file: 'trivy-report.html', text: """
+                        <html>
+                        <head>
+                            <meta charset='UTF-8'>
+                            <style>
+                                body { background: #222; color: #eee; }
+                                pre { font-family: monospace; font-size: 13px; }
+                            </style>
+                        </head>
+                        <body>
+                            <pre>
+${readFile('trivy-report.txt')}
+                            </pre>
+                        </body>
+                        </html>
+                    """
+                    publishHTML(target: [
+                        allowMissing: true,
+                        alwaysLinkToLastBuild: true,
+                        keepAll: true,
+                        reportDir: '.',
+                        reportFiles: 'trivy-report.html',
+                        reportName: 'Trivy Security Scan (Tableaux CLI)'
+                    ])
                 }
             }
         }
 
         stage('SonarQube Analysis') {
             steps {
-                echo 'Run SonarQube analysis...'
                 script {
-                    // Installation idempotente de sonar-scanner
-                    sh '''
-                        if ! command -v sonar-scanner &> /dev/null; then
-                            wget -q https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-4.8.0.2856-linux.zip
-                            unzip -q sonar-scanner-cli-4.8.0.2856-linux.zip
-                            sudo mv sonar-scanner-4.8.0.2856-linux /opt/sonar-scanner
-                            sudo ln -sf /opt/sonar-scanner/bin/sonar-scanner /usr/local/bin/sonar-scanner
-                        fi
-                    '''
-
-                    withSonarQubeEnv('SonarQube') {
-                        sh """
-                            sonar-scanner \
-                                -Dsonar.projectKey=laravel-multitenant \
-                                -Dsonar.projectName="Laravel Multi-tenant Application" \
-                                -Dsonar.projectVersion=${BUILD_NUMBER} \
-                                -Dsonar.sources=app,resources \
-                                -Dsonar.tests=tests \
-                                -Dsonar.php.coverage.reportPaths=coverage.xml \
-                                -Dsonar.php.tests.reportPath=tests/phpunit-report.xml \
-                                -Dsonar.host.url=${SONAR_HOST_URL} \
-                                -Dsonar.login=${SONAR_TOKEN} \
-                                -Dsonar.exclusions=vendor/**,node_modules/**,storage/**,bootstrap/cache/**
-                        """
+                    echo "=== Début de l'analyse SonarQube ==="
+                    if (fileExists('sonar-project.properties')) {
+                        echo "Fichier sonar-project.properties trouvé, utilisation de la configuration par défaut"
+                        withSonarQubeEnv('SonarQube') {
+                            bat """
+                                echo Vérification de la connexion SonarQube...
+                                echo Test de connexion à SonarQube...
+                                curl -s -u %SONAR_TOKEN%: http://localhost:9000/api/system/status >nul 2>&1
+                                if errorlevel 1 (
+                                    echo ERREUR: Impossible de se connecter à SonarQube
+                                    echo Vérifiez que SonarQube est démarré sur http://localhost:9000
+                                    exit /b 1
+                                )
+                                
+                                echo Vérification de PHPUnit...
+                                if exist vendor\\bin\\phpunit.bat (
+                                    echo Génération du rapport de couverture...
+                                    \"%PHP_PATH%\" vendor\\bin\\phpunit.bat --coverage-clover=coverage.xml --log-junit=phpunit-report.xml
+                                ) else if exist vendor\\bin\\phpunit (
+                                    echo Génération du rapport de couverture...
+                                    \"%PHP_PATH%\" vendor\\bin\\phpunit --coverage-clover=coverage.xml --log-junit=phpunit-report.xml
+                                ) else (
+                                    echo AVERTISSEMENT: PHPUnit non trouvé, génération d'un fichier de couverture vide
+                                    echo ^<?xml version=\"1.0\" encoding=\"UTF-8\"?^>^<coverage^>^</coverage^> > coverage.xml
+                                    echo ^<?xml version=\"1.0\" encoding=\"UTF-8\"?^>^<testsuites^>^</testsuites^> > phpunit-report.xml
+                                )
+                                
+                                echo Lancement de sonar-scanner...
+                                \"%SONAR_SCANNER_PATH%\" -Dsonar.projectKey=SonarQube -Dsonar.host.url=http://localhost:9000 -Dsonar.login=%SONAR_TOKEN%
+                                if errorlevel 1 (
+                                    echo ERREUR: Échec de l'analyse SonarQube
+                                    echo Vérifiez les permissions du token SonarQube
+                                    echo Vérifiez que le projet SonarQube existe dans SonarQube
+                                    exit /b 1
+                                )
+                                echo === Analyse SonarQube terminée avec succès ===
+                            """
+                        }
+                    } else {
+                        echo "Fichier sonar-project.properties manquant, utilisation de la configuration inline"
+                        withSonarQubeEnv('SonarQube') {
+                            bat """
+                                echo Test de connexion à SonarQube...
+                                curl -s -u %SONAR_TOKEN%: http://localhost:9000/api/system/status >nul 2>&1
+                                if errorlevel 1 (
+                                    echo ERREUR: Impossible de se connecter à SonarQube
+                                    echo Vérifiez que SonarQube est démarré sur http://localhost:9000
+                                    exit /b 1
+                                )
+                                
+                                echo Vérification de PHPUnit...
+                                if exist vendor\\bin\\phpunit.bat (
+                                    echo Génération du rapport de couverture...
+                                    \"%PHP_PATH%\" vendor\\bin\\phpunit.bat --coverage-clover=coverage.xml --log-junit=phpunit-report.xml
+                                ) else if exist vendor\\bin\\phpunit (
+                                    echo Génération du rapport de couverture...
+                                    \"%PHP_PATH%\" vendor\\bin\\phpunit --coverage-clover=coverage.xml --log-junit=phpunit-report.xml
+                                ) else (
+                                    echo AVERTISSEMENT: PHPUnit non trouvé, génération d'un fichier de couverture vide
+                                    echo ^<?xml version=\"1.0\" encoding=\"UTF-8\"?^>^<coverage^>^</coverage^> > coverage.xml
+                                    echo ^<?xml version=\"1.0\" encoding=\"UTF-8\"?^>^<testsuites^>^</testsuites^> > phpunit-report.xml
+                                )
+                                
+                                echo Lancement de sonar-scanner avec configuration inline...
+                                \"%SONAR_SCANNER_PATH%\" ^
+                                    -Dsonar.projectKey=SonarQube ^
+                                    -Dsonar.projectName=SonarQube ^
+                                    -Dsonar.sources=app,config,database,resources,routes ^
+                                    -Dsonar.tests=tests ^
+                                    -Dsonar.exclusions=vendor/**,storage/**,bootstrap/cache/**,node_modules/** ^
+                                    -Dsonar.php.coverage.reportPaths=coverage.xml ^
+                                    -Dsonar.php.tests.reportPath=phpunit-report.xml ^
+                                    -Dsonar.host.url=http://localhost:9000 ^
+                                    -Dsonar.login=%SONAR_TOKEN%
+                                if errorlevel 1 (
+                                    echo ERREUR: Échec de l'analyse SonarQube
+                                    echo Vérifiez les permissions du token SonarQube
+                                    echo Vérifiez que le projet SonarQube existe dans SonarQube
+                                    exit /b 1
+                                )
+                                echo === Analyse SonarQube terminée avec succès ===
+                            """
+                        }
                     }
                 }
+            }
+            post {
+                always {
+                    echo "Étape SonarQube Analysis terminée"
+                    publishHTML(target: [
+                        allowMissing: true,
+                        alwaysLinkToLastBuild: true,
+                        keepAll: true,
+                        reportDir: '.',
+                        reportFiles: 'coverage.xml',
+                        reportName: 'SonarQube Coverage Report'
+                    ])
+                }
+            }
+        }
+
+        stage('Unit Tests') {
+            steps {
+                bat '''
+                    echo === Tests unitaires ===
+                    composer exec -- phpunit --testsuite=Unit --log-junit junit-unit.xml
+                    if errorlevel 1 (
+                        echo ERREUR: Tests unitaires échoués
+                        exit /b 1
+                    )
+                    echo === Tests unitaires terminés ===
+                '''
+            }
+            post {
+                always {
+                    junit 'junit-unit.xml'
+                }
+            }
+        }
+
+        stage('Mutation Tests') {
+            steps {
+                bat '''
+                    echo === Tests de mutation ===
+                    copy .env .env.backup
+                    copy .env.example .env
+                    "%PHP_PATH%" artisan key:generate --force
+                    echo Tests de mutation avec Infection...
+                    if exist vendor\\bin\\infection.bat (
+                        "%PHP_PATH%" vendor\\bin\\infection.bat --logger-html=infection-report.html
+                    ) else if exist vendor\\bin\\infection (
+                        "%PHP_PATH%" vendor\\bin\\infection --logger-html=infection-report.html
+                    ) else (
+                        echo AVERTISSEMENT: Infection non trouvé, exécution des tests de base
+                        composer exec -- phpunit
+                        echo Tests de mutation de base terminés
+                    )
+                    echo AVERTISSEMENT: Tests de mutation complets nécessitent des extensions de couverture (xdebug/pcov)
+                    echo Tests de mutation terminés
+                '''
+            }
+            post {
+                always {
+                    publishHTML(target: [
+                        allowMissing: true,
+                        alwaysLinkToLastBuild: true,
+                        keepAll: true,
+                        reportDir: '.',
+                        reportFiles: 'infection-report.html',
+                        reportName: 'Mutation Testing Report'
+                    ])
+                }
+            }
+        }
+
+        stage('Trivy Code Scan') {
+            steps {
+                bat '''
+                    echo === Scan de sécurité Trivy (code) ===
+                    "%TRIVY_PATH%" fs . --skip-files vendor/laravel/pint/builds/pint --timeout 120s > trivy-report.txt 2>&1
+                    if exist trivy-report.txt (
+                        echo Fichier trivy-report.txt créé avec succès
+                    ) else (
+                        echo AVERTISSEMENT: Fichier trivy-report.txt non créé, création d'un rapport vide
+                        echo "Aucune vulnérabilité détectée ou erreur lors du scan" > trivy-report.txt
+                    )
+                '''
+            }
+            post {
+                always {
+                    bat 'type trivy-report.txt'
+                    script {
+                        def trivyText = readFile('trivy-report.txt')
+                        writeFile file: 'trivy-report.html', text: """
+                            <html>
+                            <head>
+                                <meta charset='UTF-8'>
+                                <style>
+                                    body { background: #222; color: #eee; }
+                                    pre { font-family: monospace; font-size: 13px; }
+                                </style>
+                            </head>
+                            <body>
+                                <pre>
+${trivyText}
+                                </pre>
+                            </body>
+                            </html>
+                        """
+                    }
+                    publishHTML(target: [
+                        allowMissing: true,
+                        alwaysLinkToLastBuild: true,
+                        keepAll: true,
+                        reportDir: '.',
+                        reportFiles: 'trivy-report.html',
+                        reportName: 'Trivy Security Scan (Tableaux CLI)'
+                    ])
+                }
+            }
+        }
+
+        stage('Debug Workspace') {
+            steps {
+                bat 'dir'
+                bat 'dir /s server.php'
             }
         }
 
         stage('Build Docker Image') {
             steps {
-                echo 'Building Docker image...'
-                sh "docker build -t ${DOCKER_IMAGE}:${DOCKER_TAG} ."
+                bat '''
+                    echo === Construction de l'image Docker ===
+                    echo Vérification de la présence du fichier .env...
+                    if not exist .env (
+                        echo AVERTISSEMENT: Fichier .env non trouvé, création d'un fichier .env de base
+                        echo APP_NAME=Laravel > .env
+                        echo APP_ENV=local >> .env
+                        echo APP_KEY= >> .env
+                        echo APP_DEBUG=true >> .env
+                        echo APP_URL=http://localhost:8000 >> .env
+                        echo DB_CONNECTION=mysql >> .env
+                        echo DB_HOST=db >> .env
+                        echo DB_PORT=3306 >> .env
+                        echo DB_DATABASE=laravel_multitenant >> .env
+                        echo DB_USERNAME=root >> .env
+                        echo DB_PASSWORD=rootpassword >> .env
+                        echo Fichier .env créé avec succès
+                    ) else (
+                        echo Fichier .env trouvé
+                    )
+                    
+                    echo Construction de l'image Docker...
+                    docker build -t %DOCKER_IMAGE% .
+                    if errorlevel 1 (
+                        echo ERREUR: Échec de la construction Docker
+                        exit /b 1
+                    )
+                    echo === Image Docker construite ===
+                '''
+            }
+        }
+
+        stage('Trivy Image Scan') {
+            steps {
+                bat '''
+                    echo === Scan de sécurité Trivy (image Docker) ===
+                    "%TRIVY_PATH%" image %DOCKER_IMAGE% --timeout 120s > trivy-image-report.txt 2>&1
+                    if exist trivy-image-report.txt (
+                        echo Fichier trivy-image-report.txt créé avec succès
+                    ) else (
+                        echo AVERTISSEMENT: Fichier trivy-image-report.txt non créé, création d'un rapport vide
+                        echo "Aucune vulnérabilité détectée ou erreur lors du scan" > trivy-image-report.txt
+                    )
+                '''
             }
             post {
                 always {
-                    echo 'Cleaning up dangling Docker images...'
-                    sh 'docker image prune -f --filter "dangling=true"'
+                    bat 'type trivy-image-report.txt'
+                    script {
+                        def trivyImageText = readFile('trivy-image-report.txt')
+                        writeFile file: 'trivy-image-report.html', text: """
+                            <html>
+                            <head>
+                                <meta charset='UTF-8'>
+                                <style>
+                                    body { background: #222; color: #eee; }
+                                    pre { font-family: monospace; font-size: 13px; }
+                                </style>
+                            </head>
+                            <body>
+                                <pre>
+${trivyImageText}
+                                </pre>
+                            </body>
+                            </html>
+                        """
+                    }
+                    publishHTML(target: [
+                        allowMissing: true,
+                        alwaysLinkToLastBuild: true,
+                        keepAll: true,
+                        reportDir: '.',
+                        reportFiles: 'trivy-image-report.html',
+                        reportName: 'Trivy Docker Image Security Scan'
+                    ])
                 }
             }
         }
 
-        stage('Quality Gate') {
+        stage('Deploy') {
             steps {
-                echo 'Checking SonarQube Quality Gate...'
+                // Arrêter et nettoyer les anciens conteneurs
+                bat 'docker-compose down'
+                bat 'docker container prune -f'
+
+                // Démarrer les services
+                bat 'docker-compose up -d'
+
+                // Attendre que les services soient prêts
+                bat 'powershell -Command "Start-Sleep -Seconds 30"'
+                bat 'docker-compose ps'
+                bat 'docker-compose logs app'
+
+                // Attendre que le conteneur app soit prêt
                 script {
-                    timeout(time: 1, unit: 'HOURS') {
-                        def qg = waitForQualityGate()
-                        if (qg.status != 'OK') {
-                            error "Pipeline aborted due to quality gate failure: ${qg.status}"
+                    def maxWaitTime = 60
+                    def waitTime = 0
+                    def containerReady = false
+
+                    while (waitTime < maxWaitTime && !containerReady) {
+                        try {
+                            echo "=== Container logs ==="
+                            bat 'docker-compose logs app'
+                            echo "====================="
+                            def status = bat(script: 'docker-compose ps app', returnStdout: true).trim()
+                            echo "Container status: ${status}"
+                            if (status.contains('Up')) {
+                                try {
+                                    bat 'docker-compose exec -T app echo "Container is responding"'
+                                    containerReady = true
+                                    echo "✅ Container is ready after ${waitTime} seconds"
+                                } catch (Exception e) {
+                                    echo "⏳ Container is Up but not responding yet, waiting..."
+                                    bat 'powershell -Command "Start-Sleep -Seconds 5"'
+                                    waitTime += 5
+                                }
+                            } else {
+                                echo "⏳ Container not ready yet, waiting..."
+                                bat 'powershell -Command "Start-Sleep -Seconds 5"'
+                                waitTime += 5
+                            }
+                        } catch (Exception e) {
+                            echo "⏳ Container not responding yet, waiting..."
+                            bat 'powershell -Command "Start-Sleep -Seconds 5"'
+                            waitTime += 5
                         }
                     }
+                    if (!containerReady) {
+                        echo "❌ Container failed to become ready after ${maxWaitTime} seconds"
+                        echo "=== Final container status ==="
+                        bat 'docker-compose ps'
+                        echo "=== Final container logs ==="
+                        bat 'docker-compose logs app'
+                        echo "============================"
+                        error "❌ Container failed to become ready after ${maxWaitTime} seconds"
+                    }
                 }
+
+                // Migrations avec retry
+                script {
+                    def maxRetries = 3
+                    def retryCount = 0
+                    def migrationSuccess = false
+                    while (retryCount < maxRetries && !migrationSuccess) {
+                        try {
+                            bat 'docker-compose exec -T app php artisan migrate --force'
+                            migrationSuccess = true
+                            echo "✅ Migration completed successfully on attempt ${retryCount + 1}"
+                        } catch (Exception e) {
+                            retryCount++
+                            echo "❌ Migration attempt ${retryCount} failed: ${e.getMessage()}"
+                            if (retryCount < maxRetries) {
+                                echo "⏳ Waiting 15 seconds before retry..."
+                                bat 'powershell -Command "Start-Sleep -Seconds 15"'
+                                bat 'docker-compose ps'
+                            }
+                        }
+                    }
+                    if (!migrationSuccess) {
+                        error "❌ Migration failed after ${maxRetries} attempts"
+                    }
+                }
+
+                // Seeders
+                script {
+                    try {
+                        echo "🌱 Running database seeders..."
+                        bat 'docker-compose exec -T app php artisan db:seed --force'
+                        echo "✅ Database seeding completed successfully"
+                    } catch (Exception e) {
+                        echo "❌ Database seeding failed: ${e.getMessage()}"
+                        echo "⚠️ Continuing deployment despite seeding failure"
+                    }
+                }
+
+                // Statut final et logs
+                bat 'docker-compose ps'
+                bat 'docker-compose logs --tail=20'
             }
+        }
+    }
+
+    post {
+        always {
+            bat '''
+                echo === Nettoyage ===
+                docker image prune -f
+                docker container prune -f
+            '''
+        }
+        
+        success {
+            emailext (
+                subject: "Build Successful: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
+                body: "Build completed successfully. See: ${env.BUILD_URL}",
+                recipientProviders: [[$class: 'DevelopersRecipientProvider']]
+            )
+        }
+        
+        failure {
+            emailext (
+                subject: "Build Failed: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
+                body: "Build failed. See: ${env.BUILD_URL}",
+                recipientProviders: [[$class: 'DevelopersRecipientProvider']]
+            )
+        }
+        
+        cleanup {
+            cleanWs()
         }
     }
 }

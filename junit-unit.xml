@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites>
+  <testsuite name="D:\xampp\htdocs\ayoub\phpunit.xml" tests="1" assertions="1" errors="0" failures="0" skipped="0" time="0.009446">
+    <testsuite name="Unit" tests="1" assertions="1" errors="0" failures="0" skipped="0" time="0.009446">
+      <testsuite name="Tests\Unit\ExampleTest" file="D:\xampp\htdocs\ayoub\tests\Unit\ExampleTest.php" tests="1" assertions="1" errors="0" failures="0" skipped="0" time="0.009446">
+        <testcase name="test_that_true_is_true" file="D:\xampp\htdocs\ayoub\tests\Unit\ExampleTest.php" line="12" class="Tests\Unit\ExampleTest" classname="Tests.Unit.ExampleTest" assertions="1" time="0.009446"/>
+      </testsuite>
+    </testsuite>
+  </testsuite>
+</testsuites>

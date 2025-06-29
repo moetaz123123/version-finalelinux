@@ -1,0 +1,40 @@
+# Git
+.git
+.gitignore
+.gitattributes
+
+# IDE
+.vscode
+.idea
+.nova
+.phpactor.json
+.zed
+.fleet
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Node modules (if any)
+node_modules
+
+# Build artifacts
+/public/build
+/public/hot
+
+# Storage (will be mounted as volume)
+/storage/logs
+/storage/framework/cache
+/storage/framework/sessions
+/storage/framework/views
+
+# Cache
+.phpunit.cache
+.phpunit.result.cache
+
+# Homestead
+Homestead.json
+Homestead.yaml
+
+# Keep .env file for Docker builds
+!.env 
