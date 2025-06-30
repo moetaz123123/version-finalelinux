@@ -10,7 +10,7 @@ pipeline {
         // Utilisation des outils installés localement
         COMPOSER_PATH = 'composer'
         PHP_PATH = 'C:\\xampp\\php\\php.exe'
-        TRIVY_PATH = 'C:\\Users\\User\\Downloads\\trivy_0.63.0_windows-64bit\\trivy.exe'
+        TRIVY_PATH = 'C:\\Users\\User\\Downloads\\trivy_0.63.0_windows-64bit\\trivy.exe' // Utilisation de l'image Docker Trivy
         SONARQUBE_SERVER = 'SonarQube' // Nom configuré dans Jenkins
         SONAR_SCANNER_PATH = 'C:\\Users\\User\\Downloads\\sonar-scanner-4.8.0.2856-windows\\bin\\sonar-scanner.bat'
     }
@@ -43,52 +43,168 @@ pipeline {
             }
         }
 
+        
         stage('Trivy Scan') {
             steps {
-                bat '''
-                    echo === Scan de sécurité Trivy ===
-                    echo Exécution du scan Trivy...
-                    "%TRIVY_PATH%" fs . --skip-files vendor/laravel/pint/builds/pint --timeout 120s > trivy-report.txt 2>&1
-
-                    echo Vérification du fichier de rapport...
-                    if exist trivy-report.txt (
-                        echo Fichier trivy-report.txt créé avec succès
-                    ) else (
-                        echo AVERTISSEMENT: Fichier trivy-report.txt non créé, création d'un rapport vide
-                        echo "Aucune vulnérabilité détectée ou erreur lors du scan" > trivy-report.txt
+                script {
+                    echo "=== Scan de sécurité Trivy ==="
+                    
+                    // Essayer d'abord avec l'exécutable local
+                    def trivyExitCode = bat(
+                        script: '''
+                            echo Exécution du scan Trivy...
+                            "%TRIVY_PATH%" fs . --skip-files vendor/laravel/pint/builds/pint --timeout 300s > trivy-report.txt 2>&1
+                            echo Trivy terminé avec le code: %errorlevel%
+                        ''',
+                        returnStatus: true
                     )
-                '''
+                    
+                    echo "Code de sortie Trivy: ${trivyExitCode}"
+                    
+                    // Si Trivy échoue, essayer avec Docker
+                    if (trivyExitCode != 0) {
+                        echo "Trivy local a échoué, tentative avec Docker..."
+                        
+                        // Vérifier si Docker est disponible
+                        def dockerAvailable = bat(
+                            script: 'docker --version >nul 2>&1',
+                            returnStatus: true
+                        )
+                        
+                        if (dockerAvailable == 0) {
+                            echo "Docker disponible, utilisation de l'image Trivy..."
+                            trivyExitCode = bat(
+                                script: '''
+                                    echo Exécution de Trivy via Docker...
+                                    docker run --rm -v "%cd%:/workspace" -w /workspace aquasec/trivy:latest fs . --skip-files vendor/laravel/pint/builds/pint --format table > trivy-report.txt 2>&1
+                                    echo Trivy Docker terminé avec le code: %errorlevel%
+                                ''',
+                                returnStatus: true
+                            )
+                            echo "Code de sortie Trivy Docker: ${trivyExitCode}"
+                        } else {
+                            echo "Docker non disponible, création d'un rapport d'erreur"
+                        }
+                    }
+                    
+                    // Toujours créer un rapport, même en cas d'échec
+                    if (!fileExists('trivy-report.txt')) {
+                        writeFile file: 'trivy-report.txt', text: """
+                            === Rapport Trivy ===
+                            Date: ${new Date()}
+                            Statut: ${trivyExitCode == 0 ? 'Succès' : 'Échec'}
+                            Code de sortie: ${trivyExitCode}
+                            
+                            ${trivyExitCode != 0 ? '''
+                            Détails de l'erreur:
+                            - Trivy a rencontré une erreur lors du scan
+                            - Vérifiez la connectivité réseau
+                            - Vérifiez que la base de données de vulnérabilités est accessible
+                            - Considérez l'utilisation de Docker pour éviter les problèmes de téléchargement
+                            ''' : 'Scan terminé avec succès'}
+                            
+                            Aucune vulnérabilité détectée ou erreur lors du scan.
+                        """
+                    }
+                    
+                    // Ne pas faire échouer le build à cause de Trivy
+                    echo "Trivy scan terminé (code: ${trivyExitCode}) - Le build continue..."
+                }
             }
             post {
                 always {
-                    bat 'type trivy-report.txt'
-                    writeFile file: 'trivy-report.html', text: """
-                        <html>
-                        <head>
-                            <meta charset='UTF-8'>
-                            <style>
-                                body { background: #222; color: #eee; }
-                                pre { font-family: monospace; font-size: 13px; }
-                            </style>
-                        </head>
-                        <body>
-                            <pre>
-${readFile('trivy-report.txt')}
-                            </pre>
-                        </body>
-                        </html>
-                    """
-                    publishHTML(target: [
-                        allowMissing: true,
-                        alwaysLinkToLastBuild: true,
-                        keepAll: true,
-                        reportDir: '.',
-                        reportFiles: 'trivy-report.html',
-                        reportName: 'Trivy Security Scan (Tableaux CLI)'
-                    ])
+                    script {
+                        // Afficher le contenu du rapport
+                        if (fileExists('trivy-report.txt')) {
+                            echo "=== Contenu du rapport Trivy ==="
+                            def reportContent = readFile('trivy-report.txt')
+                            echo reportContent
+                            
+                            // Créer un rapport HTML
+                            writeFile file: 'trivy-report.html', text: """
+                                <html>
+                                <head>
+                                    <meta charset='UTF-8'>
+                                    <title>Rapport de sécurité Trivy</title>
+                                    <style>
+                                        body { 
+                                            font-family: Arial, sans-serif; 
+                                            margin: 20px; 
+                                            background: #f5f5f5; 
+                                        }
+                                        .container { 
+                                            background: white; 
+                                            padding: 20px; 
+                                            border-radius: 8px; 
+                                            box-shadow: 0 2px 4px rgba(0,0,0,0.1); 
+                                        }
+                                        .header { 
+                                            background: #2c3e50; 
+                                            color: white; 
+                                            padding: 15px; 
+                                            border-radius: 5px; 
+                                            margin-bottom: 20px; 
+                                        }
+                                        .content { 
+                                            background: #f8f9fa; 
+                                            padding: 15px; 
+                                            border-radius: 5px; 
+                                            border-left: 4px solid #3498db; 
+                                        }
+                                        pre { 
+                                            font-family: 'Courier New', monospace; 
+                                            font-size: 12px; 
+                                            background: #2c3e50; 
+                                            color: #ecf0f1; 
+                                            padding: 15px; 
+                                            border-radius: 5px; 
+                                            overflow-x: auto; 
+                                        }
+                                        .status { 
+                                            padding: 10px; 
+                                            border-radius: 5px; 
+                                            margin: 10px 0; 
+                                            font-weight: bold; 
+                                        }
+                                        .success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+                                        .error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+                                    </style>
+                                </head>
+                                <body>
+                                    <div class="container">
+                                        <div class="header">
+                                            <h1>🔒 Rapport de sécurité Trivy</h1>
+                                            <p>Généré le: ${new Date()}</p>
+                                        </div>
+                                        
+                                        <div class="content">
+                                            <div class="status ${trivyExitCode == 0 ? 'success' : 'error'}">
+                                                Statut: ${trivyExitCode == 0 ? '✅ Succès' : '❌ Échec'}
+                                            </div>
+                                            
+                                            <h3>Résultats du scan:</h3>
+                                            <pre>${reportContent}</pre>
+                                        </div>
+                                    </div>
+                                </body>
+                                </html>
+                            """
+                        }
+                        
+                        // Publier le rapport HTML
+                        publishHTML(target: [
+                            allowMissing: true,
+                            alwaysLinkToLastBuild: true,
+                            keepAll: true,
+                            reportDir: '.',
+                            reportFiles: 'trivy-report.html',
+                            reportName: '🔒 Trivy Security Scan Report'
+                        ])
+                    }
                 }
             }
         }
+
 
         stage('SonarQube Analysis') {
             steps {
@@ -285,6 +401,23 @@ ${readFile('trivy-report.txt')}
             }
         }
 
+        stage('Verify server.php') {
+            steps {
+                bat '''
+                    echo === Vérification du fichier server.php ===
+                    if exist server.php (
+                        echo ✅ Fichier server.php trouvé
+                        echo Contenu du fichier server.php:
+                        type server.php
+                    ) else (
+                        echo ❌ Fichier server.php NON TROUVÉ
+                        echo Liste des fichiers dans le répertoire:
+                        dir
+                    )
+                '''
+            }
+        }
+
         stage('Build Docker Image') {
             steps {
                 bat '''
@@ -298,7 +431,7 @@ ${readFile('trivy-report.txt')}
                         echo APP_DEBUG=true >> .env
                         echo APP_URL=http://localhost:8000 >> .env
                         echo DB_CONNECTION=mysql >> .env
-                        echo DB_HOST=db >> .env
+                        echo DB_HOST=localhost >> .env
                         echo DB_PORT=3306 >> .env
                         echo DB_DATABASE=laravel_multitenant >> .env
                         echo DB_USERNAME=root >> .env
@@ -319,7 +452,20 @@ ${readFile('trivy-report.txt')}
             }
         }
 
-        stage('Trivy Image Scan') {
+        stage('Debug Container') {
+            steps {
+                bat '''
+                    echo === Debug du conteneur Docker ===
+                    echo Vérification du contenu du conteneur...
+                    docker run --rm %DOCKER_IMAGE% ls -la /var/www/server.php
+                    echo.
+                    echo Vérification du répertoire /var/www:
+                    docker run --rm %DOCKER_IMAGE% ls -la /var/www/ | findstr server
+                '''
+            }
+        }
+
+         stage('Trivy Image Scan') {
             steps {
                 bat '''
                     echo === Scan de sécurité Trivy (image Docker) ===

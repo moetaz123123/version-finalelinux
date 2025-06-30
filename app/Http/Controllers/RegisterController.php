@@ -60,11 +60,23 @@ class RegisterController extends Controller
             config(['database.connections.tenant.database' => $tenantDb]);
             DB::purge('tenant');
             DB::reconnect('tenant');
-            Artisan::call('migrate', [
+            
+            // Exécuter les migrations avec vérification
+            $migrationResult = Artisan::call('migrate', [
                 '--database' => 'tenant',
                 '--path' => 'database/migrations',
                 '--force' => true,
             ]);
+            
+            if ($migrationResult !== 0) {
+                throw new \Exception("Erreur lors de l'exécution des migrations");
+            }
+            
+            // Vérifier que la table users existe
+            $tableExists = DB::connection('tenant')->select("SHOW TABLES LIKE 'users'");
+            if (empty($tableExists)) {
+                throw new \Exception("La table users n'a pas été créée lors de la migration");
+            }
 
             // 4. Création de l'admin (transaction sur la connexion tenant)
             DB::connection('tenant')->beginTransaction();
@@ -72,9 +84,8 @@ class RegisterController extends Controller
                 'name' => $request->admin_name,
                 'email' => $request->admin_email,
                 'password' => Hash::make($request->password),
+                'is_admin' => true,
                 'tenant_id' => $tenant->id,
-                'role' => 'admin',
-                'plan' => $request->plan,
                 'created_at' => now(),
                 'updated_at' => now()
             ]);

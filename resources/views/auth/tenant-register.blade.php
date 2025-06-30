@@ -56,6 +56,18 @@
                     <small style="color: #666; display: block; margin-top: 5px;">Votre URL sera : <span style="font-weight: bold; color: #667eea;">votresousdomaine</span>.localhost:8000</small>
                 </div>
 
+                <div class="form-group">
+                    <label for="project">Sélectionnez un projet à cloner :</label>
+                    <select name="project" id="project" class="form-control" required>
+                        <option value="">-- Choisir un projet --</option>
+                        @foreach($projects as $project)
+                            <option value="{{ $project['name'] }}" {{ old('project') == $project['name'] ? 'selected' : '' }}>
+                                {{ $project['name'] }}
+                            </option>
+                        @endforeach
+                    </select>
+                </div>
+
                 <hr style="border: 1px solid #eee; margin: 2rem 0;">
 
                 <div class="form-group">

@@ -245,6 +245,16 @@
                     </select>
                 </div>
                 
+                <div class="form-group">
+                    <label for="project">Sélectionnez un projet existant :</label>
+                    <select name="project" id="project" class="form-control">
+                        <option value="">-- Choisir un projet --</option>
+                        @foreach($projects as $project)
+                            <option value="{{ $project }}">{{ $project }}</option>
+                        @endforeach
+                    </select>
+                </div>
+                
                 <button type="submit" class="submit-btn">
                     🚀 Créer mon espace entreprise
                 </button>
