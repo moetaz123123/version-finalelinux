@@ -17,6 +17,7 @@ use Illuminate\Auth\Events\Registered;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Support\Facades\File;
 use App\Models\Project;
+use Illuminate\Support\Facades\Log;
 
 class TenantRegistrationController extends Controller
 {
@@ -44,6 +45,8 @@ class TenantRegistrationController extends Controller
 
     public function register(Request $request)
     {
+        $steps = [];
+
         $validator = Validator::make($request->all(), [
             'company_name' => 'required|string|max:255',
             'subdomain' => 'required|string|max:255|alpha_dash|unique:tenants,subdomain',
@@ -93,14 +96,15 @@ class TenantRegistrationController extends Controller
 
             // 3. CLONER LE PROJET SÉLECTIONNÉ
             $selectedProjectName = $validated['project'];
-            $project = Project::findByName($selectedProjectName);
+            $project = Project::where('name', $selectedProjectName)->first();
             if (!$project) {
                 throw new \Exception("Projet non trouvé !");
             }
             
-            $repoUrl = $project['repo_url'];
+            $repoUrl = $project->repo_url;
+            $projectFolder = $project->name;
             $tenantPath = public_path("{$validated['company_name']}/{$subdomain}.localhost");
-            $clonePath = $tenantPath . '/laravel-app';
+            $clonePath = $tenantPath . '/' . $projectFolder;
 
             // Créer le dossier et cloner
             if (!File::exists($tenantPath)) {
@@ -120,13 +124,31 @@ class TenantRegistrationController extends Controller
                 throw new \Exception("Aucun fichier .env.example ou .env source trouvé !");
             }
 
-            // Personnaliser avec root et mot de passe vide
+            // 1. Trouver un port libre aléatoire
+            function findRandomFreePort($min = 1025, $max = 65535, $tries = 20) {
+                for ($i = 0; $i < $tries; $i++) {
+                    $port = rand($min, $max);
+                    $connection = @fsockopen('127.0.0.1', $port);
+                    if (is_resource($connection)) {
+                        fclose($connection);
+                    } else {
+                        return $port;
+                    }
+                }
+                throw new \Exception("Aucun port libre trouvé après $tries essais");
+            }
+            $port = findRandomFreePort(1025, 65535);
+            $host = "{$subdomain}.localhost";
+
+            // Modifier le .env AVANT toute commande
             $mainEnv = file_get_contents($envPath);
             $mainEnv = preg_replace('/DB_DATABASE=.*/', "DB_DATABASE=$databaseName", $mainEnv);
             $mainEnv = preg_replace('/DB_USERNAME=.*/', "DB_USERNAME=root", $mainEnv);
             $mainEnv = preg_replace('/DB_PASSWORD=.*/', "DB_PASSWORD=", $mainEnv);
             $mainEnv = preg_replace('/DB_HOST=.*/', "DB_HOST=127.0.0.1", $mainEnv);
+            $mainEnv = preg_replace('/APP_URL=.*/', "APP_URL=http://{$host}:{$port}", $mainEnv);
             file_put_contents($envPath, $mainEnv);
+
 
             // 5. INSTALLER LES DÉPENDANCES ET LANCER LES MIGRATIONS
             chdir($clonePath);
@@ -207,7 +229,6 @@ class TenantRegistrationController extends Controller
 
             // 9. GÉNÉRER LES LIENS ET ENVOYER L'EMAIL
             $domain = config('app.domain', 'localhost');
-            $port = $request->getPort();
             $loginUrl = "http://{$subdomain}.{$domain}:{$port}/login";
             
             $verificationUrl = URL::temporarySignedRoute(
@@ -225,12 +246,18 @@ class TenantRegistrationController extends Controller
 
             event(new Registered($user));
 
+            // 2. Lancer le serveur Laravel en arrière-plan (Windows)
+            $command = "start /MIN cmd /C \"cd /d {$clonePath} && php artisan serve --host={$host} --port={$port}\"";
+            pclose(popen($command, "r"));
             // 10. STOCKER EN SESSION POUR LA PAGE DE SUCCÈS
+            $path = "/public/{$validated['company_name']}/{$subdomain}.localhost/{$projectFolder}";
             session([
-                'company_name' => $validated['company_name'],
+                'tenant_name' => $tenant->name,
                 'subdomain' => $subdomain,
                 'admin_email' => $validated['admin_email'],
-                'path' => "/public/{$validated['company_name']}/{$subdomain}.localhost",
+                'path' => $path,
+                'login_url' => $loginUrl,
+                'port' => $port,
             ]);
 
         } catch (\Exception $e) {
@@ -242,6 +269,7 @@ class TenantRegistrationController extends Controller
             }
             return redirect()->route('tenant.register')
                 ->withErrors(['error' => 'Une erreur est survenue lors de la création de votre espace: ' . $e->getMessage()])
+                ->with('steps', $steps)
                 ->withInput();
         }
 
@@ -250,6 +278,7 @@ class TenantRegistrationController extends Controller
             'tenant_name' => $tenant->name,
             'login_url' => $loginUrl,
             'admin_email' => $user->email,
+            'steps' => $steps,
         ]);
     }
 

@@ -54,6 +54,16 @@ class ProjectSeeder extends Seeder
                 'version' => '1.0.0',
                 'is_active' => true,
             ],
+            [
+                'name' => 'version-welcome',
+                'display_name' => 'Version Welcome',
+                'description' => 'Projet Laravel version-welcome',
+                'repo_url' => 'https://github.com/moetaz123123/version-welcome.git',
+                'repo_name' => 'version-welcome',
+                'category' => 'Laravel',
+                'version' => '1.0.0',
+                'is_active' => true,
+            ],
         ];
 
         foreach ($projects as $project) {

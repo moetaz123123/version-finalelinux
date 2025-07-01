@@ -23,7 +23,7 @@ Route::post('/register', [RegisterController::class, 'register']);
 
 // Route du dashboard (protégée par le middleware d'authentification)
 Route::middleware(['auth'])->group(function () {
-    Route::get('/dashboard', [AuthController::class, 'dashboard'])->name('dashboard');
+    
     
     // Routes de gestion des utilisateurs
     Route::resource('users', UserController::class);
@@ -34,10 +34,7 @@ Route::middleware(['auth'])->group(function () {
     });
 });
 
-// Routes d'authentification (seulement pour les sous-domaines)
-Route::get('/login', [AuthController::class, 'showLoginForm'])->name('login');
-Route::post('/login', [AuthController::class, 'login']);
-Route::post('/logout', [AuthController::class, 'logout'])->name('logout');
+
 
 // Affiche la page demandant de vérifier l'email
 Route::get('/email/verify', function () {

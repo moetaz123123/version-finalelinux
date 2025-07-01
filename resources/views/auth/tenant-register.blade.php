@@ -58,12 +58,10 @@
 
                 <div class="form-group">
                     <label for="project">Sélectionnez un projet à cloner :</label>
-                    <select name="project" id="project" class="form-control" required>
-                        <option value="">-- Choisir un projet --</option>
+                    <select name="project" required>
+                        <option value="">Choisir un projet</option>
                         @foreach($projects as $project)
-                            <option value="{{ $project['name'] }}" {{ old('project') == $project['name'] ? 'selected' : '' }}>
-                                {{ $project['name'] }}
-                            </option>
+                            <option value="{{ $project->name }}">{{ $project->display_name }}</option>
                         @endforeach
                     </select>
                 </div>
