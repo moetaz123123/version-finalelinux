@@ -102,7 +102,7 @@ class RegisterController extends Controller
             $successMessage .= "📦 Plan : " . ucfirst($request->plan) . "\n\n";
             $successMessage .= "Vous pouvez maintenant vous connecter avec votre email et mot de passe.";
 
-            return redirect()->route('login')->with('success', $successMessage);
+            abort(403, 'Accès refusé.');
 
         } catch (\Exception $e) {
             // Rollback uniquement si la transaction est active

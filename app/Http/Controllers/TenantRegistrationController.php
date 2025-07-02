@@ -66,6 +66,8 @@ class TenantRegistrationController extends Controller
         $subdomain = $validated['subdomain'];
         $databaseName = 'tenant_' . $subdomain;
 
+        $steps[] = "Création de la base de données <strong>$databaseName</strong>...";
+
         try {
             // 1. CRÉER LA BASE DE DONNÉES DÉDIÉE
             $exists = DB::select("SELECT SCHEMA_NAME FROM INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME = ?", [$databaseName]);
@@ -83,6 +85,8 @@ class TenantRegistrationController extends Controller
             if (!$exists) {
                 throw new \Exception("La base de données $databaseName n'a pas été créée !");
             }
+
+            $steps[] = "Base de données <strong>$databaseName</strong> créée avec succès.";
 
             // 2. CRÉER LE TENANT DANS LA BASE PRINCIPALE
             DB::beginTransaction();
@@ -106,6 +110,8 @@ class TenantRegistrationController extends Controller
             $tenantPath = public_path("{$validated['company_name']}/{$subdomain}.localhost");
             $clonePath = $tenantPath . '/' . $projectFolder;
 
+            $steps[] = "Clonage du projet <strong>$projectFolder</strong> depuis <code>$repoUrl</code>...";
+
             // Créer le dossier et cloner
             if (!File::exists($tenantPath)) {
                 File::makeDirectory($tenantPath, 0755, true);
@@ -113,6 +119,8 @@ class TenantRegistrationController extends Controller
             if (!File::exists($clonePath)) {
                 exec("git clone $repoUrl $clonePath");
             }
+
+            $steps[] = "Projet cloné dans <code>$clonePath</code>.";
 
             // 4. PERSONNALISER LE .ENV DU PROJET CLONÉ
             $envPath = $clonePath . '/.env';
@@ -154,11 +162,15 @@ class TenantRegistrationController extends Controller
             chdir($clonePath);
             set_time_limit(300);
 
+            $steps[] = "Installation des dépendances Composer...";
+
             // Installer les dépendances
             exec('composer install', $output, $returnCode);
             if ($returnCode !== 0) {
                 throw new \Exception("Erreur lors de l'installation des dépendances Composer");
             }
+
+            $steps[] = "Dépendances installées.";
 
             // Générer la clé
             exec('php artisan key:generate', $output, $returnCode);
@@ -177,6 +189,8 @@ class TenantRegistrationController extends Controller
 
             // Lancer les seeders
             exec('php artisan db:seed --force', $returnCode);
+
+            $steps[] = "Lancement des migrations et seeders...";
 
             // 6. CONFIGURER LA CONNEXION VERS LA BASE DU TENANT (depuis le projet principal)
             Config::set('database.connections.tenant.database', $databaseName);
@@ -212,6 +226,8 @@ class TenantRegistrationController extends Controller
             if (!$tableExists) {
                 throw new \Exception("La table 'users' n'existe toujours pas après $maxAttempts tentatives de migration");
             }
+
+            $steps[] = "Migrations et seeders terminés.";
 
             // 8. CRÉER L'ADMIN DANS LA BASE DU TENANT
             DB::connection('tenant')->beginTransaction();
@@ -285,7 +301,7 @@ class TenantRegistrationController extends Controller
     public function success()
     {
         if (!session()->has('company_name')) {
-            return redirect('/login');
+            abort(403, 'Accès refusé.');
         }
         return view('auth.tenant-success', [
             'company_name' => session('company_name'),

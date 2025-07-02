@@ -27,7 +27,7 @@ class TenantMiddleware
         if (in_array($subdomain, ['www', 'localhost', '127'])) {
             // Mais on redirige les tentatives de connexion vers la page d'accueil
             if ($request->path() === 'login') {
-                return redirect('/');
+                abort(403, 'Accès refusé.');
             }
             return $next($request);
         }
@@ -41,7 +41,7 @@ class TenantMiddleware
 
         // Si on est sur un sous-domaine valide, rediriger vers la page de connexion
         if ($request->path() === '/') {
-            return redirect('/login');
+            abort(403, 'Accès refusé.');
         }
 
         // Si le locataire est trouvé, configure sa base de données
