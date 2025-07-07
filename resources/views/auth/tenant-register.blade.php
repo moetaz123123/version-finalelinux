@@ -22,6 +22,18 @@
         .login-link a:hover { text-decoration: underline; }
         .error { background: #fee; color: #c33; padding: 10px; border-radius: 5px; margin-bottom: 1rem; border: 1px solid #fcc; }
         .error ul { list-style-position: inside; padding-left: 0; }
+        @keyframes spin { 100% { transform: rotate(360deg); } }
+        .dot {
+            display: inline-block;
+            width: 10px; height: 10px;
+            margin: 0 3px;
+            background: #6366f1;
+            border-radius: 50%;
+            animation: bounce 1s infinite alternate;
+        }
+        .dot:nth-child(2) { animation-delay: 0.2s; }
+        .dot:nth-child(3) { animation-delay: 0.4s; }
+        @keyframes bounce { to { transform: translateY(-10px); } }
     </style>
 </head>
 <body>
@@ -88,9 +100,47 @@
                     <input type="password" id="admin_password_confirmation" name="admin_password_confirmation" required>
                 </div>
                 
-                <button type="submit" class="submit-btn">Créer mon Espace</button>
+                <button id="register-btn" type="submit" class="login-btn">
+                    <span id="register-btn-text">Créer mon espace</span>
+                    <span id="register-btn-spinner" style="display:none;margin-left:10px;">
+                        <svg width="20" height="20" viewBox="0 0 50 50">
+                            <circle cx="25" cy="25" r="20" fill="none" stroke="#6366f1" stroke-width="5" stroke-linecap="round" stroke-dasharray="31.4 31.4" transform="rotate(-90 25 25)">
+                                <animateTransform attributeName="transform" type="rotate" from="0 25 25" to="360 25 25" dur="1s" repeatCount="indefinite"/>
+                            </circle>
+                        </svg>
+                    </span>
+                </button>
             </form>
         </div>
     </div>
+    <div id="loader-overlay" style="display:none;position:fixed;top:0;left:0;width:100vw;height:100vh;background:rgba(255,255,255,0.85);z-index:9999;align-items:center;justify-content:center;">
+        <div style="font-size:2rem;color:#6366f1;">
+            <span class="spinner" style="display:inline-block;width:2.5rem;height:2.5rem;border:4px solid #6366f1;border-top:4px solid #fff;border-radius:50%;animation:spin 1s linear infinite;margin-bottom:1rem;"></span>
+            <br>
+            Création de votre espace en cours...
+        </div>
+    </div>
+    <div id="progress-bar" style="position:fixed;top:0;left:0;width:0;height:4px;background:#6366f1;z-index:9999;transition:width 0.4s;"></div>
+    <div id="dots-loader" style="display:none;text-align:center;">
+        <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+    </div>
+    <script>
+    document.addEventListener('DOMContentLoaded', function() {
+        var form = document.querySelector('form');
+        var btn = document.getElementById('register-btn');
+        var text = document.getElementById('register-btn-text');
+        var spinner = document.getElementById('register-btn-spinner');
+        var bar = document.getElementById('progress-bar');
+        if(form && btn && spinner && bar) {
+            form.addEventListener('submit', function() {
+                btn.disabled = true;
+                text.textContent = 'Création en cours...';
+                spinner.style.display = 'inline-block';
+                bar.style.width = '100vw';
+                document.getElementById('dots-loader').style.display = 'block';
+            });
+        }
+    });
+    </script>
 </body>
 </html> 

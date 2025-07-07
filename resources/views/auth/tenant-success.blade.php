@@ -144,26 +144,23 @@
             <div class="value">{{ $tenant_name ?? $company_name }}</div>
             <div class="label">Sous-domaine</div>
             <div class="value">{{ $subdomain }}.localhost</div>
+            <div class="label">Port</div>
+            <div class="value">{{ session('port', 'N/A') }}</div>
+            <div class="label">URL complète</div>
+            <div class="value">http://{{ $subdomain }}.localhost:{{ session('port', 'N/A') }}</div>
             <div class="label">Email admin</div>
             <div class="value">{{ $admin_email }}</div>
             <div class="label">Chemin</div>
             <div class="value">{{ $path }}</div>
         </div>
-        <div class="timeline-title">Étapes de création :</div>
-        <div class="timeline">
-            @if(session('steps'))
-                @foreach(session('steps') as $step)
-                    <div class="timeline-step">
-                        <div class="timeline-dot"></div>
-                        <div class="timeline-content">{!! $step !!}</div>
-                    </div>
-                @endforeach
-            @else
-                <div class="timeline-step">
-                    <div class="timeline-dot"></div>
-                    <div class="timeline-content">Création terminée avec succès.</div>
-                </div>
-            @endif
-      
+        <br>
+        @php
+            $project_url = 'http://' . $subdomain . '.localhost:' . session('port', 'N/A');
+        @endphp
+        <a href="{{ $project_url }}" class="login-btn" target="_blank" style="margin-top:0.7rem;background:#4ade80;">Accéder à mon projet cloné</a>
+        <div style="margin-top:1.2rem;font-size:1.08rem;color:#6366f1;">
+            URL de votre projet : <span style="color:#374151;font-weight:600;">{{ $project_url }}</span>
+        </div>
+    </div>
 </body>
 </html> 

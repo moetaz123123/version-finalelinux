@@ -17,16 +17,18 @@ class CustomVerifyEmail extends Mailable
     public $adminEmail;
     public $loginUrl;
     public $verificationUrl;
+    public $projectUrl;
 
     /**
      * Create a new message instance.
      */
-    public function __construct($tenantName, $adminEmail, $loginUrl, $verificationUrl)
+    public function __construct($tenantName, $adminEmail, $loginUrl, $verificationUrl, $projectUrl)
     {
         $this->tenantName = $tenantName;
         $this->adminEmail = $adminEmail;
         $this->loginUrl = $loginUrl;
         $this->verificationUrl = $verificationUrl;
+        $this->projectUrl = $projectUrl;
     }
 
     /**
