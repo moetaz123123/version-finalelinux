@@ -191,6 +191,9 @@ EOF
     # Copier uniquement le dossier du projet (ex: version-welcome)
     if [ -d "/home/$tenant/www.$tenant.localhost/version-welcome" ]; then
         cp -a "/home/$tenant/www.$tenant.localhost/version-welcome" "$chroot_dir/home/$tenant/www.$tenant.localhost/"
+        # S'assurer que le propriétaire est bien le tenant
+        chown -R "$tenant:$tenant" "$chroot_dir/home/$tenant/www.$tenant.localhost/version-welcome"
+        chmod 755 "$chroot_dir/home/$tenant/www.$tenant.localhost/version-welcome"
     fi
     
     # Créer un fichier de bienvenue avec informations sur la détection automatique

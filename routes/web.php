@@ -7,7 +7,7 @@ use App\Http\Controllers\UserController;
 use App\Http\Controllers\TenantRegistrationController;
 use Illuminate\Foundation\Auth\EmailVerificationRequest;
 use Illuminate\Http\Request;
-
+use App\Http\Controllers\Admin\PortController;
 // Route d'accueil
 Route::get('/', function () {
     return view('welcome');
@@ -21,13 +21,7 @@ Route::get('/register/tenant/success', [TenantRegistrationController::class, 'su
 // Route pour récupérer le port d'un tenant
 Route::get('/tenant/{subdomain}/port', [TenantRegistrationController::class, 'getTenantPortFromCache'])->name('tenant.port');
 
-// Routes pour la gestion des ports des tenants
-Route::prefix('api/tenant-ports')->name('tenant-ports.')->group(function () {
-    Route::get('/{subdomain}', [App\Http\Controllers\TenantPortController::class, 'getPort'])->name('get');
-    Route::post('/{subdomain}/generate', [App\Http\Controllers\TenantPortController::class, 'generatePort'])->name('generate');
-    Route::delete('/{subdomain}', [App\Http\Controllers\TenantPortController::class, 'removePort'])->name('remove');
-    Route::get('/', [App\Http\Controllers\TenantPortController::class, 'listPorts'])->name('list');
-});
+
 
 // Routes d'inscription
 Route::get('/register', [RegisterController::class, 'showRegistrationForm'])->name('register');
@@ -67,3 +61,22 @@ Route::post('/email/verification-notification', function (Request $request) {
     $request->user()->sendEmailVerificationNotification();
     return back()->with('resent', true);
 })->middleware(['auth', 'throttle:6,1'])->name('verification.resend');
+
+// Routes admin pour la gestion des ports
+Route::middleware(['auth', 'admin'])->prefix('admin/ports')->group(function () {
+    
+    // Voir toutes les associations port <-> sous-domaine
+    Route::get('/', [PortController::class, 'index'])->name('admin.ports.index');
+    
+    // Libérer un port spécifique
+    Route::delete('/{port}', [PortController::class, 'releasePort'])->name('admin.ports.release');
+    
+    // Réassigner un port à un sous-domaine
+    Route::put('/reassign', [PortController::class, 'reassignPort'])->name('admin.ports.reassign');
+    
+    // Assigner un port à un nouveau tenant
+    Route::post('/assign', [PortController::class, 'assignPort'])->name('admin.ports.assign');
+    
+    // Nettoyer les associations orphelines
+    Route::post('/cleanup', [PortController::class, 'cleanup'])->name('admin.ports.cleanup');
+});
